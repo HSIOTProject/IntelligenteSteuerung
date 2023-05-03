@@ -1,5 +1,6 @@
 from typing import *
 from enum import Enum
+import datetime
 from abc import ABC, abstractmethod
 
 
@@ -13,10 +14,15 @@ class SteurElement(ABC):
     @abstractmethod
     def getConsumptionWatt(self) -> float:
         pass
+    
+    @abstractmethod
+    def getMinActiveTimeSeconds(self):
+        pass
 
     @abstractmethod
     def steuerung(self, data, überschuss) -> SteuerStatus:
         pass
+
     
 
 class Wärmepumpe(SteurElement):
@@ -26,11 +32,12 @@ class Wärmepumpe(SteurElement):
 
     def getConsumptionWatt(self) -> float:
         return self.consumption
+        
+    def getMinActiveTimeSeconds(self):
+        return 60 * 15
     
     def steuerung(self, data, überschuss) -> SteuerStatus:
         socHouseBattery = data["e3dc"]["stateOfCharge"]
-        wpStatus = data["wärmepumpe"]["status"]
-        productionSolarTotal = data["e3dc"]["production"]["solar"] + data["e3dc"]["production"]["add"]
         productionGrid = data["e3dc"]["production"]["grid"]
         überschuss = (productionGrid * -1) if productionGrid < 0 else 0
         
@@ -48,6 +55,9 @@ class Wallbox(SteurElement):
     
     def getConsumptionWatt(self) -> float:
         return self.consumption
+        
+    def getMinActiveTimeSeconds(self):
+        return 60 * 5
 
     def wallboxStatus(self, wbPlugged, überschuss):
         if wbPlugged:
@@ -60,9 +70,6 @@ class Wallbox(SteurElement):
         wallboxDataKey = "wallbox"+self.wallboxId.capitalize()
         socHouseBattery = data["e3dc"]["stateOfCharge"]
         plugged = data[wallboxDataKey]["plugged"]
-        wbChargingActive = data[wallboxDataKey]["chargingActive"]
-        wpStatus = data["wärmepumpe"]["status"]
-        productionSolarTotal = data["e3dc"]["production"]["solar"] + data["e3dc"]["production"]["add"]
 
         if plugged:
             if (überschuss > self.consumption) and (socHouseBattery > 30):
@@ -73,7 +80,22 @@ class Wallbox(SteurElement):
         return SteuerStatus.KEEP_STATE
 
 
-def sterung(data):
+STATE = {
+    "wallboxLinks": {
+        "timestampActivated": None,
+    },
+    "wallboxRechts": {
+        "timestampActivated": None,
+    },
+    "wärmepumpe": {
+        "timestampActivated": None,
+    }
+}
+
+
+def sterung(data, now: datetime.datetime=None):
+    if not now:
+        now = datetime.datetime.now()
     productionGrid = data["e3dc"]["production"]["grid"]
     überschuss = (productionGrid * -1) if productionGrid < 0 else 0
     komponenten = {
@@ -85,9 +107,14 @@ def sterung(data):
     steuerStatus = {}
 
     for key, value in komponenten.items():
+        timestampActivate = STATE[key]["timestampActivated"] 
+        timestampNextAllowedAction = timestampActivate + datetime.timedelta(seconds=value.getMinActiveTimeSeconds()) if timestampActivate else None
+        if timestampActivate and now < timestampNextAllowedAction:
+            steuerStatus[key] = SteuerStatus.KEEP_STATE
+            continue
         status = value.steuerung(data, überschuss)
-        print(f"{überschuss=} {key=} {status=}")
         if status == SteuerStatus.EIN:
+            STATE[key]["timestampActivated"] = now
             überschuss = überschuss - value.getConsumptionWatt()
         elif status == SteuerStatus.AUS:
             pass

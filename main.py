@@ -2,6 +2,7 @@ import logging
 import os
 from typing import *
 from jsonrpcx import *
+import datetime
 import steuerung
 
 logging.basicConfig(level=logging.DEBUG)
@@ -18,7 +19,7 @@ class Service(ASGIServer):
         }
         
     async def steuerung(self, data):
-        return steuerung.sterung(data)
+        return steuerung.sterung(data, datetime.datetime.now())
 
    
 
