@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.DEBUG)
 class Service(ASGIServer):
     async def ping(self) -> str:
         return "pong"
-    
+
     async def update(self):
         code = os.system("git pull")
         return {
