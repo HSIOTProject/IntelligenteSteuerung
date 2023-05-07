@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 jsonrpcx = "*"
 uvicorn = "*"
+asyncio-mqtt = "*"
 
 [dev-packages]
 pytest = "*"
